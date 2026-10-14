@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NC Code Analyser - AI-Powered NC Code Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        [x-cloak] {
+            display: none !important;
+        }
+
+        .gradient-bg {
+            background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%);
+        }
+
+        .diff-added {
+            background-color: #dcfce7;
+            border-left: 4px solid #22c55e;
+        }
+
+        .diff-removed {
+            background-color: #fee2e2;
+            border-left: 4px solid #ef4444;
+        }
+
+        .diff-modified {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 280px;
+            height: 40px;
+            background: #e2e8f0;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+
+        .toggle-switch .toggle-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 50%;
+            height: 34px;
+            background: #4f46e5;
+            border-radius: 17px;
+            transition: transform 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .toggle-switch .toggle-slider.folder {
+            transform: translateX(calc(100% - 6px));
+        }
+
+        .toggle-switch .toggle-labels {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+        }
+
+        .toggle-switch .toggle-labels span {
+            flex: 1;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .toggle-switch .toggle-labels span.active {
+            color: white;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen" x-data="ncAnalyser()">
+    <!-- Navigation -->
+    <nav class="gradient-bg text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-microchip text-2xl"></i>
+                    <div>
+                        <h1 class="text-xl font-bold">NC Code Analyser</h1>
+                        <p class="text-xs text-blue-200">AI-Powered Regression Detection</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-xs font-mono bg-white/20 px-2 py-1 rounded-md border border-white/30"
+                        x-text="appVersion ? appVersion : '...'"
+                        title="Application version (from .env APP_VERSION)"></span>
+                    <span class="text-sm" x-show="aiAvailable">
+                        <i class="fas fa-robot text-green-300"></i> AI Ready
+                    </span>
+                    <span class="text-sm text-yellow-300" x-show="!aiAvailable">
+                        <i class="fas fa-exclamation-triangle"></i> AI Offline
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Tabs -->
+        <div class="flex space-x-1 mb-6 bg-white rounded-lg p-1 shadow">
+            <button @click="activeTab = 'compare'"
+                :class="activeTab === 'compare' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors">
+                <i class="fas fa-code-compare mr-2"></i>Compare Files
+            </button>
+            <button @click="activeTab = 'history'"
+                :class="activeTab === 'history' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors">
+                <i class="fas fa-history mr-2"></i>Analysis History
+            </button>
+            <button @click="activeTab = 'feedback'"
+                :class="activeTab === 'feedback' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors">
+                <i class="fas fa-comments mr-2"></i>Feedback & Learning
+            </button>
+        </div>
+
+        <!-- Compare Tab -->
+        <div x-show="activeTab === 'compare'" x-cloak>
+            <!-- Mode Toggle -->
+            <div class="flex justify-center mb-6">
+                <div class="toggle-switch"
+                    @click="compareMode = compareMode === 'file' ? 'folder' : 'file'; resetCompare()">
+                    <div class="toggle-slider" :class="compareMode === 'folder' ? 'folder' : ''"></div>
+                    <div class="toggle-labels">
+                        <span :class="compareMode === 'file' ? 'active' : ''"><i
+                                class="fas fa-file-code mr-1"></i>File</span>
+                        <span :class="compareMode === 'folder' ? 'active' : ''"><i
+                                class="fas fa-folder-open mr-1"></i>Folder</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== FILE COMPARISON MODE ===== -->
+            <div x-show="compareMode === 'file'">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Baseline File -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-file-code text-blue-600 mr-2"></i>Baseline NC File
+                        </h3>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors"
+                            @dragover.prevent="dragOver = 'baseline'" @dragleave="dragOver = null"
+                            @drop.prevent="handleDrop($event, 'baseline')"
+                            :class="dragOver === 'baseline' ? 'border-indigo-500 bg-indigo-50' : ''">
+                            <input type="file" id="baseline-file" class="hidden"
+                                @change="handleFileSelect($event, 'baseline')" accept=".nc,.tap,.gcode,.ngc,.cnc,.txt">
+                            <label for="baseline-file" class="cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                                <p class="text-gray-600">Drag & drop or click to upload</p>
+                                <p class="text-sm text-gray-400 mt-1">Supports .nc, .tap, .gcode, .ngc, .cnc, .txt</p>
+                            </label>
+                        </div>
+                        <div x-show="baselineFile"
+                            class="mt-4 p-3 bg-green-50 rounded-lg flex items-center justify-between">
+                            <div class="flex items-center">
+                                <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                <span x-text="baselineFile?.name" class="text-sm font-medium"></span>
+                            </div>
+                            <button @click="baselineFile = null" class="text-red-500 hover:text-red-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <label class="text-sm text-gray-500">Or paste NC code:</label>
+                            <textarea x-model="baselineContent"
+                                class="w-full mt-1 p-3 border rounded-lg font-mono text-sm h-32 resize-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Paste baseline NC code here..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- New File -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-file-code text-green-600 mr-2"></i>New NC File
+                        </h3>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-green-400 transition-colors"
+                            @dragover.prevent="dragOver = 'new'" @dragleave="dragOver = null"
+                            @drop.prevent="handleDrop($event, 'new')"
+                            :class="dragOver === 'new' ? 'border-green-500 bg-green-50' : ''">
+                            <input type="file" id="new-file" class="hidden" @change="handleFileSelect($event, 'new')"
+                                accept=".nc,.tap,.gcode,.ngc,.cnc,.txt">
+                            <label for="new-file" class="cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                                <p class="text-gray-600">Drag & drop or click to upload</p>
+                                <p class="text-sm text-gray-400 mt-1">Supports .nc, .tap, .gcode, .ngc, .cnc, .txt</p>
+                            </label>
+                        </div>
+                        <div x-show="newFile" class="mt-4 p-3 bg-green-50 rounded-lg flex items-center justify-between">
+                            <div class="flex items-center">
+                                <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                <span x-text="newFile?.name" class="text-sm font-medium"></span>
+                            </div>
+                            <button @click="newFile = null" class="text-red-500 hover:text-red-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="mt-4">
+                            <label class="text-sm text-gray-500">Or paste NC code:</label>
+                            <textarea x-model="newContent"
+                                class="w-full mt-1 p-3 border rounded-lg font-mono text-sm h-32 resize-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Paste new NC code here..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compare Button -->
+                <div class="flex justify-center mb-6">
+                    <button @click="runComparison()"
+                        :disabled="isComparing || (!baselineFile && !baselineContent) || (!newFile && !newContent)"
+                        class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-all transform hover:scale-105 disabled:hover:scale-100">
+                        <span x-show="!isComparing">
+                            <i class="fas fa-magnifying-glass-chart mr-2"></i>Analyze Differences
+                        </span>
+                        <span x-show="isComparing">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...
+                        </span>
+                    </button>
+                </div>
+
+                <!-- Results Section (file mode) -->
+                <div x-show="analysisResult" x-cloak class="space-y-6">
+                    <!-- Classification Banner -->
+                    <div class="rounded-xl shadow-lg overflow-hidden bg-white border-l-4" :class="{
+                         'border-red-600': analysisResult?.classification === 'REGRESSION',
+                         'border-green-600': analysisResult?.classification === 'PROGRESSION',
+                         'border-blue-600': analysisResult?.classification === 'NEUTRAL',
+                         'border-yellow-600': analysisResult?.classification === 'UNCERTAIN'
+                     }">
+                        <div class="p-6">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-4">
+                                    <div class="text-4xl" :class="{
+                                         'text-red-600': analysisResult?.classification === 'REGRESSION',
+                                         'text-green-600': analysisResult?.classification === 'PROGRESSION',
+                                         'text-blue-600': analysisResult?.classification === 'NEUTRAL',
+                                         'text-yellow-600': analysisResult?.classification === 'UNCERTAIN'
+                                     }">
+                                        <i x-show="analysisResult?.classification === 'REGRESSION'"
+                                            class="fas fa-exclamation-triangle"></i>
+                                        <i x-show="analysisResult?.classification === 'PROGRESSION'"
+                                            class="fas fa-arrow-trend-up"></i>
+                                        <i x-show="analysisResult?.classification === 'NEUTRAL'"
+                                            class="fas fa-equals"></i>
+                                        <i x-show="analysisResult?.classification === 'UNCERTAIN'"
+                                            class="fas fa-question"></i>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-2xl font-bold" :class="{
+                                            'text-red-600': analysisResult?.classification === 'REGRESSION',
+                                            'text-green-600': analysisResult?.classification === 'PROGRESSION',
+                                            'text-blue-600': analysisResult?.classification === 'NEUTRAL',
+                                            'text-yellow-600': analysisResult?.classification === 'UNCERTAIN'
+                                        }" x-text="analysisResult?.classification"></h2>
+                                        <p class="text-gray-600">AI Confidence: <span class="font-semibold"
+                                                x-text="(analysisResult?.confidence * 100).toFixed(1) + '%'"></span></p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-sm text-gray-500">Analysis ID</p>
+                                    <p class="font-mono text-sm text-gray-700"
+                                        x-text="analysisResult?.analysis_id?.substring(0, 8) + '...'"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-white rounded-lg shadow p-4 text-center">
+                            <div class="text-3xl font-bold text-green-600" x-text="analysisResult?.lines_added || 0">
+                            </div>
+                            <div class="text-sm text-gray-500">Lines Added</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4 text-center">
+                            <div class="text-3xl font-bold text-red-600" x-text="analysisResult?.lines_removed || 0">
+                            </div>
+                            <div class="text-sm text-gray-500">Lines Removed</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4 text-center">
+                            <div class="text-3xl font-bold text-yellow-600"
+                                x-text="analysisResult?.lines_modified || 0"></div>
+                            <div class="text-sm text-gray-500">Lines Modified</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4 text-center">
+                            <div class="text-3xl font-bold text-purple-600"
+                                x-text="analysisResult?.critical_changes || 0"></div>
+                            <div class="text-sm text-gray-500">Critical Changes</div>
+                        </div>
+                    </div>
+
+                    <!-- Operations with Changes -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-semibold text-gray-800">
+                                <i class="fas fa-layer-group text-orange-500 mr-2"></i>Operations with Changes
+                            </h3>
+                            <div class="flex items-center space-x-3">
+                                <span class="text-3xl font-bold"
+                                    :class="(analysisResult?.operations_with_changes || 0) > 0 ? 'text-orange-600' : 'text-green-600'"
+                                    x-text="analysisResult?.operations_with_changes || 0"></span>
+                                <span class="text-sm text-gray-500">operations affected</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-400 mt-2">See the full report for detailed operation-level
+                            breakdown.</p>
+                    </div>
+
+                    <!-- AI Reasoning -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">
+                            <i class="fas fa-robot text-indigo-600 mr-2"></i>AI Analysis
+                        </h3>
+                        <ul x-show="analysisResult?.key_findings?.length" class="space-y-2">
+                            <template x-for="finding in analysisResult?.key_findings">
+                                <li class="flex items-start p-2 bg-gray-50 rounded-lg border-l-4 border-indigo-500">
+                                    <i class="fas fa-circle-info text-indigo-500 mt-1 mr-2 flex-shrink-0"></i>
+                                    <span x-text="finding" class="text-gray-700 text-sm"></span>
+                                </li>
+                            </template>
+                        </ul>
+                        <p x-show="!analysisResult?.key_findings?.length" class="text-gray-500 text-sm">No findings
+                            available.</p>
+                    </div>
+
+                    <!-- QA Feedback Section -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-user-check text-green-600 mr-2"></i>QA Review
+                        </h3>
+                        <p class="text-sm text-gray-500 mb-4">Help improve the AI by providing your expert assessment:
+                        </p>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <button @click="feedbackClassification = 'REGRESSION'"
+                                :class="feedbackClassification === 'REGRESSION' ? 'ring-2 ring-red-500 bg-red-50' : 'hover:bg-gray-50'"
+                                class="p-4 border rounded-lg text-center transition-all">
+                                <i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>
+                                <p class="font-medium">Regression</p>
+                                <p class="text-xs text-gray-500">Undesired change</p>
+                            </button>
+                            <button @click="feedbackClassification = 'PROGRESSION'"
+                                :class="feedbackClassification === 'PROGRESSION' ? 'ring-2 ring-green-500 bg-green-50' : 'hover:bg-gray-50'"
+                                class="p-4 border rounded-lg text-center transition-all">
+                                <i class="fas fa-arrow-trend-up text-green-500 text-2xl mb-2"></i>
+                                <p class="font-medium">Progression</p>
+                                <p class="text-xs text-gray-500">Expected improvement</p>
+                            </button>
+                            <button @click="feedbackClassification = 'NEUTRAL'"
+                                :class="feedbackClassification === 'NEUTRAL' ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'"
+                                class="p-4 border rounded-lg text-center transition-all">
+                                <i class="fas fa-equals text-blue-500 text-2xl mb-2"></i>
+                                <p class="font-medium">Neutral</p>
+                                <p class="text-xs text-gray-500">No functional impact</p>
+                            </button>
+                        </div>
+
+                        <div class="space-y-3">
+                            <input type="text" x-model="feedbackReviewer" placeholder="Your name"
+                                class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <textarea x-model="feedbackNotes" placeholder="Additional notes (optional)..."
+                                class="w-full p-3 border rounded-lg h-24 resize-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                            <button @click="submitFeedback()" :disabled="!feedbackClassification || !feedbackReviewer"
+                                class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-3 rounded-lg transition-colors">
+                                <i class="fas fa-paper-plane mr-2"></i>Submit Feedback
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex justify-center space-x-4">
+                        <button @click="downloadReport('html')"
+                            class="bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-6 rounded-lg shadow border transition-colors">
+                            <i class="fas fa-file-code mr-2"></i>Download HTML Report
+                        </button>
+                        <button @click="downloadReport('json')"
+                            class="bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-6 rounded-lg shadow border transition-colors">
+                            <i class="fas fa-file-code mr-2"></i>Download JSON
+                        </button>
+                    </div>
+                </div>
+            </div><!-- end file comparison mode -->
+
+            <!-- ===== FOLDER COMPARISON MODE ===== -->
+            <div x-show="compareMode === 'folder'">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- Baseline Folder -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-folder text-blue-600 mr-2"></i>Baseline Folder
+                        </h3>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors cursor-pointer"
+                            @click="$refs.baselineFolderInput.click()"
+                            :class="baselineFolderFiles.length > 0 ? 'border-indigo-500 bg-indigo-50' : ''">
+                            <input type="file" x-ref="baselineFolderInput" class="hidden"
+                                @change="handleFolderSelect($event, 'baseline')" webkitdirectory directory multiple>
+                            <i class="fas fa-folder-open text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600">Click to select baseline folder</p>
+                            <p class="text-sm text-gray-400 mt-1">All NC files in the folder will be loaded</p>
+                        </div>
+                        <div x-show="baselineFolderFiles.length > 0" class="mt-4 p-3 bg-green-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center">
+                                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                    <span class="text-sm font-medium"
+                                        x-text="baselineFolderFiles.length + ' files loaded'"></span>
+                                </div>
+                                <button @click="baselineFolderFiles = []" class="text-red-500 hover:text-red-700">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="max-h-32 overflow-y-auto scrollbar-thin">
+                                <template x-for="f in baselineFolderFiles" :key="f.name">
+                                    <p class="text-xs text-gray-500 font-mono" x-text="f.name"></p>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Result Folder -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-folder text-green-600 mr-2"></i>Result Folder
+                        </h3>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-green-400 transition-colors cursor-pointer"
+                            @click="$refs.resultFolderInput.click()"
+                            :class="resultFolderFiles.length > 0 ? 'border-green-500 bg-green-50' : ''">
+                            <input type="file" x-ref="resultFolderInput" class="hidden"
+                                @change="handleFolderSelect($event, 'result')" webkitdirectory directory multiple>
+                            <i class="fas fa-folder-open text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600">Click to select result folder</p>
+                            <p class="text-sm text-gray-400 mt-1">All NC files in the folder will be loaded</p>
+                        </div>
+                        <div x-show="resultFolderFiles.length > 0" class="mt-4 p-3 bg-green-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center">
+                                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                    <span class="text-sm font-medium"
+                                        x-text="resultFolderFiles.length + ' files loaded'"></span>
+                                </div>
+                                <button @click="resultFolderFiles = []" class="text-red-500 hover:text-red-700">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="max-h-32 overflow-y-auto scrollbar-thin">
+                                <template x-for="f in resultFolderFiles" :key="f.name">
+                                    <p class="text-xs text-gray-500 font-mono" x-text="f.name"></p>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Folder Compare Button -->
+                <div class="flex justify-center mb-6">
+                    <button @click="runFolderComparison()"
+                        :disabled="isComparing || baselineFolderFiles.length === 0 || resultFolderFiles.length === 0"
+                        class="relative overflow-hidden bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-all transform hover:scale-105 disabled:hover:scale-100 min-w-[260px]">
+                        <!-- Progress fill (purple, grows left -> right while comparing) -->
+                        <div x-show="isComparing"
+                            class="absolute inset-y-0 left-0 bg-indigo-500 transition-[width] duration-200 ease-out"
+                            :style="`width: ${folderProgressPercent}%`" aria-hidden="true"></div>
+                        <!-- Label sits above the fill -->
+                        <span class="relative z-10" x-show="!isComparing">
+                            <i class="fas fa-folder-tree mr-2"></i>Analyze Folders
+                        </span>
+                        <span class="relative z-10" x-show="isComparing">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Analyzing <span
+                                x-text="Math.round(folderProgressPercent) + '%'"></span>
+                        </span>
+                    </button>
+                </div>
+
+                <!-- ===== FOLDER RESULTS ===== -->
+                <div x-show="folderResult" x-cloak class="space-y-6">
+                    <!-- Numeric Dashboard -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-chart-bar text-indigo-600 mr-2"></i>Folder Comparison Dashboard
+                        </h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+                            <div class="bg-gray-50 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-indigo-700"
+                                    x-text="folderResult?.dashboard?.total_files || 0"></div>
+                                <div class="text-xs text-gray-500">Total Files</div>
+                            </div>
+                            <div class="bg-amber-50 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-amber-600"
+                                    x-text="folderResult?.dashboard?.files_with_diffs || 0"></div>
+                                <div class="text-xs text-gray-500">With Diffs</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-3 text-center">
+                                <div class="text-2xl font-bold text-green-600"
+                                    x-text="folderResult?.dashboard?.no_changes || 0"></div>
+                                <div class="text-xs text-gray-500">No Changes</div>
+                            </div>
+                            <div class="bg-red-50 rounded-lg p-3 text-center cursor-pointer ring-2 ring-transparent hover:ring-red-300 transition-all"
+                                :class="folderFilter === 'regression' ? 'ring-red-500' : ''"
+                                @click="folderFilter = folderFilter === 'regression' ? 'all' : 'regression'">
+                                <div class="text-2xl font-bold text-red-600"
+                                    x-text="folderResult?.dashboard?.regressions || 0"></div>
+                                <div class="text-xs text-gray-500">Regressions</div>
+                            </div>
+                            <div class="bg-emerald-50 rounded-lg p-3 text-center cursor-pointer ring-2 ring-transparent hover:ring-emerald-300 transition-all"
+                                :class="folderFilter === 'progression' ? 'ring-emerald-500' : ''"
+                                @click="folderFilter = folderFilter === 'progression' ? 'all' : 'progression'">
+                                <div class="text-2xl font-bold text-emerald-600"
+                                    x-text="folderResult?.dashboard?.progressions || 0"></div>
+                                <div class="text-xs text-gray-500">Progressions</div>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-3 text-center cursor-pointer ring-2 ring-transparent hover:ring-blue-300 transition-all"
+                                :class="folderFilter === 'neutral' ? 'ring-blue-500' : ''"
+                                @click="folderFilter = folderFilter === 'neutral' ? 'all' : 'neutral'">
+                                <div class="text-2xl font-bold text-blue-600"
+                                    x-text="folderResult?.dashboard?.neutral || 0"></div>
+                                <div class="text-xs text-gray-500">Neutral</div>
+                            </div>
+                            <div class="bg-orange-50 rounded-lg p-3 text-center cursor-pointer ring-2 ring-transparent hover:ring-orange-300 transition-all"
+                                :class="folderFilter === 'missing_in_result' ? 'ring-orange-500' : ''"
+                                @click="folderFilter = folderFilter === 'missing_in_result' ? 'all' : 'missing_in_result'">
+                                <div class="text-2xl font-bold text-orange-600"
+                                    x-text="folderResult?.dashboard?.result_file_missing || 0"></div>
+                                <div class="text-xs text-gray-500">Missing</div>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-3 text-center cursor-pointer ring-2 ring-transparent hover:ring-purple-300 transition-all"
+                                :class="folderFilter === 'new_in_result' ? 'ring-purple-500' : ''"
+                                @click="folderFilter = folderFilter === 'new_in_result' ? 'all' : 'new_in_result'">
+                                <div class="text-2xl font-bold text-purple-600"
+                                    x-text="folderResult?.dashboard?.new_in_result || 0"></div>
+                                <div class="text-xs text-gray-500">New</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Category Filter Buttons -->
+                    <div class="flex flex-wrap justify-center gap-3">
+                        <button @click="folderFilter = 'all'"
+                            :class="folderFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                            class="py-2 px-5 rounded-lg font-medium shadow border transition-colors">
+                            <i class="fas fa-list mr-1"></i>All Files (<span
+                                x-text="folderResult?.file_results?.length || 0"></span>)
+                        </button>
+                        <button @click="folderFilter = 'regression'"
+                            :class="folderFilter === 'regression' ? 'bg-red-600 text-white' : 'bg-white text-red-600 hover:bg-red-50'"
+                            class="py-2 px-5 rounded-lg font-medium shadow border border-red-200 transition-colors">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>Regressions (<span
+                                x-text="folderResult?.dashboard?.regressions || 0"></span>)
+                        </button>
+                        <button @click="folderFilter = 'progression'"
+                            :class="folderFilter === 'progression' ? 'bg-green-600 text-white' : 'bg-white text-green-600 hover:bg-green-50'"
+                            class="py-2 px-5 rounded-lg font-medium shadow border border-green-200 transition-colors">
+                            <i class="fas fa-arrow-trend-up mr-1"></i>Progressions (<span
+                                x-text="folderResult?.dashboard?.progressions || 0"></span>)
+                        </button>
+                        <button @click="folderFilter = 'neutral'"
+                            :class="folderFilter === 'neutral' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 hover:bg-blue-50'"
+                            class="py-2 px-5 rounded-lg font-medium shadow border border-blue-200 transition-colors">
+                            <i class="fas fa-equals mr-1"></i>Neutral (<span
+                                x-text="folderResult?.dashboard?.neutral || 0"></span>)
+                        </button>
+                        <button @click="folderFilter = 'no_change'"
+                            :class="folderFilter === 'no_change' ? 'bg-gray-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                            class="py-2 px-5 rounded-lg font-medium shadow border transition-colors">
+                            <i class="fas fa-check mr-1"></i>No Change (<span
+                                x-text="folderResult?.dashboard?.no_changes || 0"></span>)
+                        </button>
+                    </div>
+
+                    <!-- Filtered File List -->
+                    <div class="space-y-3">
+                        <template x-for="fr in filteredFolderFiles()" :key="fr.file_name">
+                            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                                <!-- File Header (clickable) -->
+                                <div class="p-4 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between"
+                                    @click="toggleFileDetail(fr.file_name)">
+                                    <div class="flex items-center space-x-3">
+                                        <i class="fas fa-file-code text-gray-400"></i>
+                                        <span class="font-medium text-gray-800" x-text="fr.file_name"></span>
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold uppercase" :class="{
+                                                  'bg-red-100 text-red-700': fr.status === 'regression',
+                                                  'bg-green-100 text-green-700': fr.status === 'progression',
+                                                  'bg-blue-100 text-blue-700': fr.status === 'neutral',
+                                                  'bg-gray-100 text-gray-600': fr.status === 'no_change',
+                                                  'bg-orange-100 text-orange-700': fr.status === 'missing_in_result',
+                                                  'bg-purple-100 text-purple-700': fr.status === 'new_in_result'
+                                              }" x-text="fr.status.replace(/_/g, ' ')"></span>
+                                    </div>
+                                    <div class="flex items-center space-x-4 text-sm text-gray-500">
+                                        <span x-show="fr.lines_added > 0" class="text-green-600">+<span
+                                                x-text="fr.lines_added"></span></span>
+                                        <span x-show="fr.lines_removed > 0" class="text-red-600">-<span
+                                                x-text="fr.lines_removed"></span></span>
+                                        <span x-show="fr.lines_modified > 0" class="text-amber-600">~<span
+                                                x-text="fr.lines_modified"></span></span>
+                                        <span x-show="fr.confidence > 0" class="text-gray-400"
+                                            x-text="(fr.confidence * 100).toFixed(0) + '%'"></span>
+                                        <i class="fas fa-chevron-down transition-transform"
+                                            :class="expandedFile === fr.file_name ? 'rotate-180' : ''"></i>
+                                    </div>
+                                </div>
+
+                                <!-- Expanded Detail -->
+                                <div x-show="expandedFile === fr.file_name" x-cloak
+                                    class="border-t p-5 bg-gray-50 space-y-4">
+                                    <!-- File Summary -->
+                                    <div x-show="!fr.files_identical" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div class="bg-white rounded-lg p-3 text-center shadow-sm">
+                                            <div class="text-xl font-bold text-green-600" x-text="fr.lines_added"></div>
+                                            <div class="text-xs text-gray-500">Added</div>
+                                        </div>
+                                        <div class="bg-white rounded-lg p-3 text-center shadow-sm">
+                                            <div class="text-xl font-bold text-red-600" x-text="fr.lines_removed"></div>
+                                            <div class="text-xs text-gray-500">Removed</div>
+                                        </div>
+                                        <div class="bg-white rounded-lg p-3 text-center shadow-sm">
+                                            <div class="text-xl font-bold text-amber-600" x-text="fr.lines_modified">
+                                            </div>
+                                            <div class="text-xs text-gray-500">Modified</div>
+                                        </div>
+                                        <div class="bg-white rounded-lg p-3 text-center shadow-sm">
+                                            <div class="text-xl font-bold text-purple-600" x-text="fr.critical_changes">
+                                            </div>
+                                            <div class="text-xs text-gray-500">Critical</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- AI Reasoning -->
+                                    <div x-show="fr.reasoning" class="bg-white rounded-lg p-4 shadow-sm">
+                                        <h4 class="font-semibold text-sm text-gray-700 mb-2"><i
+                                                class="fas fa-robot text-indigo-500 mr-1"></i>AI Analysis</h4>
+                                        <p class="text-sm text-gray-600" x-text="fr.reasoning"></p>
+                                    </div>
+
+                                    <!-- Key Findings -->
+                                    <div x-show="fr.key_findings?.length" class="bg-white rounded-lg p-4 shadow-sm">
+                                        <h4 class="font-semibold text-sm text-gray-700 mb-2"><i
+                                                class="fas fa-lightbulb text-yellow-500 mr-1"></i>Key Findings</h4>
+                                        <ul class="space-y-1">
+                                            <template x-for="kf in fr.key_findings">
+                                                <li class="text-sm text-gray-600 flex items-start">
+                                                    <i
+                                                        class="fas fa-circle text-xs text-indigo-400 mt-1.5 mr-2 flex-shrink-0"></i>
+                                                    <span x-text="kf"></span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+
+                                    <!-- Operations -->
+                                    <div x-show="fr.operation_diffs?.length" class="bg-white rounded-lg p-4 shadow-sm">
+                                        <h4 class="font-semibold text-sm text-gray-700 mb-2"><i
+                                                class="fas fa-layer-group text-orange-500 mr-1"></i>Operations (<span
+                                                x-text="fr.operations_with_changes"></span>)</h4>
+                                        <template x-for="op in fr.operation_diffs">
+                                            <div class="flex items-center justify-between p-2 mb-1 rounded border-l-3"
+                                                :class="{
+                                                     'bg-amber-50 border-l-amber-400': op.change_type === 'modified',
+                                                     'bg-green-50 border-l-green-400': op.change_type === 'added',
+                                                     'bg-red-50 border-l-red-400': op.change_type === 'removed'
+                                                 }" style="border-left-width:3px;">
+                                                <span class="text-sm font-medium" x-text="op.operation_name"></span>
+                                                <span class="text-xs text-gray-500">
+                                                    <span x-show="op.lines_modified"
+                                                        x-text="op.lines_modified + ' mod'"></span>
+                                                    <span x-show="op.lines_added"
+                                                        x-text="' | ' + op.lines_added + ' add'"></span>
+                                                    <span x-show="op.lines_removed"
+                                                        x-text="' | ' + op.lines_removed + ' rem'"></span>
+                                                </span>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- View full report link -->
+                                    <div x-show="fr.analysis_id" class="flex items-center space-x-3">
+                                        <button
+                                            @click="window.open('/api/reports/' + fr.analysis_id + '?format=html', '_blank')"
+                                            class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+                                            <i class="fas fa-external-link-alt mr-1"></i>View Full Detail Report
+                                        </button>
+                                        <button
+                                            @click="window.open('/api/reports/' + fr.analysis_id + '?format=json', '_blank')"
+                                            class="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                                            <i class="fas fa-download mr-1"></i>Download JSON
+                                        </button>
+                                    </div>
+
+                                    <!-- Per-file Feedback -->
+                                    <div x-show="fr.analysis_id"
+                                        class="bg-white rounded-lg p-4 shadow-sm border-t-2 border-indigo-200">
+                                        <h4 class="font-semibold text-sm text-gray-700 mb-3"><i
+                                                class="fas fa-user-check text-green-500 mr-1"></i>Feedback for <span
+                                                x-text="fr.file_name"></span></h4>
+                                        <div class="flex space-x-2 mb-3">
+                                            <button @click="setFileFeedback(fr.file_name, 'REGRESSION')"
+                                                :class="getFileFeedback(fr.file_name) === 'REGRESSION' ? 'ring-2 ring-red-500 bg-red-50' : 'hover:bg-gray-50'"
+                                                class="flex-1 p-2 border rounded-lg text-center text-sm transition-all">
+                                                <i class="fas fa-exclamation-triangle text-red-500"></i>
+                                                <p class="text-xs mt-1">Regression</p>
+                                            </button>
+                                            <button @click="setFileFeedback(fr.file_name, 'PROGRESSION')"
+                                                :class="getFileFeedback(fr.file_name) === 'PROGRESSION' ? 'ring-2 ring-green-500 bg-green-50' : 'hover:bg-gray-50'"
+                                                class="flex-1 p-2 border rounded-lg text-center text-sm transition-all">
+                                                <i class="fas fa-arrow-trend-up text-green-500"></i>
+                                                <p class="text-xs mt-1">Progression</p>
+                                            </button>
+                                            <button @click="setFileFeedback(fr.file_name, 'NEUTRAL')"
+                                                :class="getFileFeedback(fr.file_name) === 'NEUTRAL' ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'"
+                                                class="flex-1 p-2 border rounded-lg text-center text-sm transition-all">
+                                                <i class="fas fa-equals text-blue-500"></i>
+                                                <p class="text-xs mt-1">Neutral</p>
+                                            </button>
+                                        </div>
+                                        <div class="flex space-x-2">
+                                            <input type="text" :placeholder="'Reviewer name'"
+                                                x-model="folderFeedbackReviewer"
+                                                class="flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                            <input type="text" placeholder="Notes (optional)"
+                                                @input="setFileFeedbackNotes(fr.file_name, $event.target.value)"
+                                                class="flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                            <button @click="submitFileFeedback(fr.file_name)"
+                                                :disabled="!getFileFeedback(fr.file_name) || !folderFeedbackReviewer"
+                                                class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors">
+                                                <i class="fas fa-paper-plane"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Empty state -->
+                        <div x-show="filteredFolderFiles().length === 0" class="text-center text-gray-500 py-8">
+                            <i class="fas fa-filter text-3xl mb-2"></i>
+                            <p>No files match the selected filter.</p>
+                        </div>
+                    </div>
+
+                    <!-- Folder Actions -->
+                    <div class="flex justify-center space-x-4">
+                        <button @click="downloadFolderReport()"
+                            class="bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-6 rounded-lg shadow border transition-colors">
+                            <i class="fas fa-file-code mr-2"></i>Download Full HTML Report
+                        </button>
+                    </div>
+                </div>
+            </div><!-- end folder comparison mode -->
+        </div><!-- end compare tab -->
+
+        <!-- History Tab -->
+        <div x-show="activeTab === 'history'" x-cloak>
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h3 class="font-semibold text-gray-800">Recent Analyses</h3>
+                    <button @click="loadHistory()" class="text-indigo-600 hover:text-indigo-800">
+                        <i class="fas fa-refresh mr-1"></i>Refresh
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Analysis
+                                    ID</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Files
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                    Classification</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                    Confidence</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">QA
+                                    Reviewed</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <template x-for="item in analysisHistory" :key="item.analysis_id">
+                                <tr class="hover:bg-gray-50 cursor-pointer" @click="viewAnalysis(item.analysis_id)">
+                                    <td class="px-4 py-3 font-mono text-sm"
+                                        x-text="item.analysis_id.substring(0, 8) + '...'"></td>
+                                    <td class="px-4 py-3 text-sm">
+                                        <span x-text="item.baseline_file"></span> → <span x-text="item.new_file"></span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span class="px-2 py-1 rounded-full text-xs font-medium" :class="{
+                                                  'bg-red-100 text-red-800': item.classification === 'regression',
+                                                  'bg-green-100 text-green-800': item.classification === 'progression',
+                                                  'bg-blue-100 text-blue-800': item.classification === 'neutral',
+                                                  'bg-yellow-100 text-yellow-800': item.classification === 'uncertain'
+                                              }" x-text="item.classification.toUpperCase()"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm" x-text="(item.confidence * 100).toFixed(1) + '%'">
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <i x-show="item.qa_reviewed" class="fas fa-check-circle text-green-500"></i>
+                                        <i x-show="!item.qa_reviewed" class="fas fa-clock text-gray-400"></i>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-500"
+                                        x-text="new Date(item.created_at).toLocaleString()"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="analysisHistory.length === 0" class="p-8 text-center text-gray-500">
+                    <i class="fas fa-inbox text-4xl mb-3"></i>
+                    <p>No analyses yet. Start by comparing two NC files.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feedback Tab -->
+        <div x-show="activeTab === 'feedback'" x-cloak>
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div class="text-2xl font-bold text-indigo-600" x-text="feedbackStats.total_feedback || 0">
+                    </div>
+                    <div class="text-sm text-gray-500">Total Feedback</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div class="text-2xl font-bold text-yellow-600" x-text="feedbackStats.corrections || 0"></div>
+                    <div class="text-sm text-gray-500">AI Corrections</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div class="text-2xl font-bold text-green-600"
+                        x-text="((1 - (feedbackStats.correction_rate || 0)) * 100).toFixed(1) + '%'"></div>
+                    <div class="text-sm text-gray-500">AI Accuracy</div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div class="text-2xl font-bold text-purple-600"
+                        x-text="Object.keys(feedbackStats.by_classification || {}).length"></div>
+                    <div class="text-sm text-gray-500">Classification Types</div>
+                </div>
+            </div>
+
+            <!-- Recent Feedback -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h3 class="font-semibold text-gray-800">Recent QA Feedback</h3>
+                    <button @click="loadFeedbackStats()" class="text-indigo-600 hover:text-indigo-800">
+                        <i class="fas fa-refresh mr-1"></i>Refresh
+                    </button>
+                </div>
+                <div class="divide-y divide-gray-200">
+                    <template x-for="fb in recentFeedback" :key="fb.feedback_id">
+                        <div class="p-4 hover:bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center space-x-3">
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium" :class="{
+                                              'bg-red-100 text-red-800': fb.qa_classification === 'regression',
+                                              'bg-green-100 text-green-800': fb.qa_classification === 'progression',
+                                              'bg-blue-100 text-blue-800': fb.qa_classification === 'neutral'
+                                          }" x-text="fb.qa_classification?.toUpperCase()"></span>
+                                    <span x-show="fb.was_correction"
+                                        class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
+                                        Corrected from <span x-text="fb.ai_classification?.toUpperCase()"></span>
+                                    </span>
+                                </div>
+                                <span class="text-sm text-gray-500" x-text="fb.qa_reviewer"></span>
+                            </div>
+                            <p class="text-sm text-gray-600" x-text="fb.qa_notes || 'No notes'"></p>
+                            <p class="text-xs text-gray-400 mt-1" x-text="new Date(fb.created_at).toLocaleString()">
+                            </p>
+                        </div>
+                    </template>
+                </div>
+                <div x-show="recentFeedback.length === 0" class="p-8 text-center text-gray-500">
+                    <i class="fas fa-comments text-4xl mb-3"></i>
+                    <p>No feedback yet. The AI learns from your corrections!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="fixed bottom-4 right-4 space-y-2" x-show="toasts.length > 0">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="px-4 py-3 rounded-lg shadow-lg text-white transition-all" :class="{
+                     'bg-green-600': toast.type === 'success',
+                     'bg-red-600': toast.type === 'error',
+                     'bg-blue-600': toast.type === 'info'
+                 }" x-text="toast.message"></div>
+        </template>
+    </div>
+
+    <script>
+        function ncAnalyser() {
+            return {
+                // State
+                activeTab: 'compare',
+                compareMode: 'file',
+                aiAvailable: true,
+                appVersion: '',
+                isComparing: false,
+                dragOver: null,
+
+                // File mode
+                baselineFile: null,
+                newFile: null,
+                baselineContent: '',
+                newContent: '',
+                analysisResult: null,
+
+                // Folder mode
+                baselineFolderFiles: [],
+                resultFolderFiles: [],
+                folderResult: null,
+                folderFilter: 'all',
+                expandedFile: null,
+                folderProgress: '',
+                folderProgressPercent: 0,
+                folderFeedbackReviewer: '',
+                fileFeedbacks: {},
+
+                // History & Feedback
+                analysisHistory: [],
+                feedbackClassification: '',
+                feedbackReviewer: '',
+                feedbackNotes: '',
+                feedbackStats: {},
+                recentFeedback: [],
+
+                // Toasts
+                toasts: [],
+
+                init() {
+                    this.checkHealth();
+                    this.loadHistory();
+                    this.loadFeedbackStats();
+                },
+
+                resetCompare() {
+                    this.analysisResult = null;
+                    this.folderResult = null;
+                    this.baselineFile = null;
+                    this.newFile = null;
+                    this.baselineContent = '';
+                    this.newContent = '';
+                    this.baselineFolderFiles = [];
+                    this.resultFolderFiles = [];
+                    this.folderFilter = 'all';
+                    this.expandedFile = null;
+                    this.fileFeedbacks = {};
+                },
+
+                async checkHealth() {
+                    try {
+                        const res = await fetch('/health');
+                        const data = await res.json();
+                        this.aiAvailable = data.ai_available !== false;
+                        if (data.version) {
+                            this.appVersion = data.version.startsWith('v') ? data.version : 'v' + data.version;
+                        }
+                    } catch (e) {
+                        this.aiAvailable = false;
+                    }
+                },
+
+                async loadHistory() {
+                    try {
+                        const res = await fetch('/api/compare');
+                        const data = await res.json();
+                        this.analysisHistory = data.analyses || [];
+                    } catch (e) {
+                        console.error('Failed to load history', e);
+                    }
+                },
+
+                async loadFeedbackStats() {
+                    try {
+                        const [statsRes, recentRes] = await Promise.all([
+                            fetch('/api/feedback/stats'),
+                            fetch('/api/feedback/recent')
+                        ]);
+                        this.feedbackStats = await statsRes.json();
+                        const recentData = await recentRes.json();
+                        this.recentFeedback = recentData.feedback || [];
+                    } catch (e) {
+                        console.error('Failed to load feedback stats', e);
+                    }
+                },
+
+                // File handling (single file mode)
+                handleFileSelect(event, type) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        if (type === 'baseline') {
+                            this.baselineFile = file;
+                            this.baselineContent = '';
+                        } else {
+                            this.newFile = file;
+                            this.newContent = '';
+                        }
+                    }
+                },
+
+                handleDrop(event, type) {
+                    this.dragOver = null;
+                    const file = event.dataTransfer.files[0];
+                    if (file) {
+                        if (type === 'baseline') {
+                            this.baselineFile = file;
+                            this.baselineContent = '';
+                        } else {
+                            this.newFile = file;
+                            this.newContent = '';
+                        }
+                    }
+                },
+
+                // Folder handling
+                handleFolderSelect(event, type) {
+                    const rawFiles = Array.from(event.target.files);
+                    const validExts = ['.nc', '.tap', '.gcode', '.ngc', '.cnc', '.txt'];
+                    const filtered = [];
+                    for (const f of rawFiles) {
+                        const dotIdx = f.name.lastIndexOf('.');
+                        if (dotIdx < 0) continue;
+                        const ext = f.name.substring(dotIdx).toLowerCase();
+                        if (!validExts.includes(ext)) continue;
+                        // Use webkitRelativePath to get the path relative to selected folder.
+                        // Strip the top-level folder name so only the file's name (or subpath) remains.
+                        let displayName = f.name;
+                        if (f.webkitRelativePath) {
+                            const parts = f.webkitRelativePath.split('/');
+                            // parts[0] is the selected folder name, rest is the relative path
+                            displayName = parts.length > 1 ? parts.slice(1).join('/') : f.name;
+                        }
+                        // Wrap in a plain object so Alpine reactivity works reliably
+                        filtered.push({ name: displayName, _file: f });
+                    }
+                    if (type === 'baseline') {
+                        this.baselineFolderFiles = filtered;
+                    } else {
+                        this.resultFolderFiles = filtered;
+                    }
+                },
+
+                // Single file comparison
+                async runComparison() {
+                    this.isComparing = true;
+                    this.analysisResult = null;
+
+                    try {
+                        let baselineData = this.baselineContent;
+                        let newData = this.newContent;
+
+                        if (this.baselineFile) {
+                            baselineData = await this.readFile(this.baselineFile);
+                        }
+                        if (this.newFile) {
+                            newData = await this.readFile(this.newFile);
+                        }
+
+                        const res = await fetch('/api/compare', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                baseline_content: baselineData,
+                                new_content: newData,
+                                include_ai_classification: true
+                            })
+                        });
+
+                        if (!res.ok) throw new Error('Comparison failed');
+
+                        this.analysisResult = await res.json();
+                        this.showToast('Analysis complete!', 'success');
+                        this.loadHistory();
+
+                    } catch (e) {
+                        this.showToast('Comparison failed: ' + e.message, 'error');
+                    } finally {
+                        this.isComparing = false;
+                    }
+                },
+
+                // Folder comparison
+                async runFolderComparison() {
+                    this.isComparing = true;
+                    this.folderResult = null;
+                    this.folderFilter = 'all';
+                    this.expandedFile = null;
+                    this.fileFeedbacks = {};
+                    this.folderProgressPercent = 0;
+
+                    try {
+                        // ---- Phase 1: name match (free - no file I/O) ----
+                        // Files that only exist on one side never need to be
+                        // read or sent to the server. This matters a lot
+                        // when the folders live on a slow network share.
+                        const baselineByName = new Map(
+                            this.baselineFolderFiles.map(f => [f.name, f._file])
+                        );
+                        const resultByName = new Map(
+                            this.resultFolderFiles.map(f => [f.name, f._file])
+                        );
+
+                        const allNames = new Set([
+                            ...baselineByName.keys(),
+                            ...resultByName.keys(),
+                        ]);
+
+                        const missingInResult = [];
+                        const newInResult = [];
+                        const matched = []; // {name, baseline, result}
+
+                        for (const name of allNames) {
+                            const b = baselineByName.get(name);
+                            const r = resultByName.get(name);
+                            if (b && !r) missingInResult.push(name);
+                            else if (!b && r) newInResult.push(name);
+                            else matched.push({ name, baseline: b, result: r });
+                        }
+
+                        // Weight the two long phases for the progress bar.
+                        // Hash-check + content-read are the I/O-heavy steps;
+                        // server processing afterwards is the remaining 10%.
+                        const HASH_WEIGHT = 40; // 0  -> 40
+                        const READ_WEIGHT = 50; // 40 -> 90
+                        // 90 -> 100 reserved for server response.
+                        this.folderProgressPercent = matched.length === 0 ? HASH_WEIGHT : 0;
+
+                        // ---- Phase 2: size + hash triage on matched pairs ----
+                        // Size check is free (File.size is a property). Same-
+                        // size files get a SHA-256 to confirm identity. Files
+                        // that match are dropped so we never read or upload
+                        // their content.
+                        const unchanged = [];
+                        const changed = [];
+                        const hashOk = !!(window.crypto && crypto.subtle && crypto.subtle.digest);
+                        const triageBatch = 16;
+
+                        for (let i = 0; i < matched.length; i += triageBatch) {
+                            const batch = matched.slice(i, i + triageBatch);
+                            const verdicts = await Promise.all(batch.map(async pair => {
+                                // Different sizes => definitely different.
+                                if (pair.baseline.size !== pair.result.size) {
+                                    return { pair, identical: false };
+                                }
+                                try {
+                                    const identical = hashOk
+                                        ? (await this.hashFile(pair.baseline)) === (await this.hashFile(pair.result))
+                                        : await this.filesBytesEqual(pair.baseline, pair.result);
+                                    return { pair, identical };
+                                } catch (_) {
+                                    // On any read/hash error fall back to "changed"
+                                    // so the server gets a chance to compare them.
+                                    return { pair, identical: false };
+                                }
+                            }));
+                            verdicts.forEach(v => {
+                                (v.identical ? unchanged : changed).push(v.pair);
+                            });
+                            const done = Math.min(i + triageBatch, matched.length);
+                            this.folderProgressPercent = (done / matched.length) * HASH_WEIGHT;
+                        }
+
+                        // ---- Phase 3: read only the files that changed ----
+                        const baselineMap = {};
+                        const resultMap = {};
+                        const readBatch = 20;
+                        if (changed.length === 0) {
+                            this.folderProgressPercent = HASH_WEIGHT + READ_WEIGHT;
+                        }
+                        for (let i = 0; i < changed.length; i += readBatch) {
+                            const batch = changed.slice(i, i + readBatch);
+                            const reads = await Promise.all(
+                                batch.flatMap(p => [this.readFile(p.baseline), this.readFile(p.result)])
+                            );
+                            batch.forEach((p, idx) => {
+                                baselineMap[p.name] = reads[idx * 2];
+                                resultMap[p.name] = reads[idx * 2 + 1];
+                            });
+                            const done = Math.min(i + readBatch, changed.length);
+                            this.folderProgressPercent =
+                                HASH_WEIGHT + (done / changed.length) * READ_WEIGHT;
+                        }
+
+                        // Server response = remaining 10% (indeterminate).
+                        this.folderProgressPercent = 90;
+
+                        const res = await fetch('/api/folder-compare', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                baseline_files: baselineMap,
+                                result_files: resultMap,
+                                include_ai_classification: true,
+                                pre_classified_missing: missingInResult,
+                                pre_classified_new: newInResult,
+                                pre_classified_unchanged: unchanged.map(p => p.name),
+                            })
+                        });
+
+                        if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            throw new Error(err.detail || 'Folder comparison failed');
+                        }
+
+                        this.folderResult = await res.json();
+                        this.folderProgressPercent = 100;
+                        this.showToast(`Folder analysis complete! ${this.folderResult.dashboard.total_files} files processed.`, 'success');
+
+                    } catch (e) {
+                        this.showToast('Folder comparison failed: ' + e.message, 'error');
+                    } finally {
+                        this.isComparing = false;
+                        this.folderProgress = '';
+                        this.folderProgressPercent = 0;
+                    }
+                },
+
+                // SHA-256 hex digest of a File via the Web Crypto API.
+                // Only callable in a secure context (https or localhost).
+                async hashFile(file) {
+                    const buf = await file.arrayBuffer();
+                    const digest = await crypto.subtle.digest('SHA-256', buf);
+                    return Array.from(new Uint8Array(digest))
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join('');
+                },
+
+                // Byte-exact comparison fallback for environments without
+                // crypto.subtle (e.g. plain HTTP access by IP/hostname).
+                // Returns true only when the two files are byte-identical.
+                async filesBytesEqual(a, b) {
+                    if (a.size !== b.size) return false;
+                    const [ab, bb] = await Promise.all([a.arrayBuffer(), b.arrayBuffer()]);
+                    if (ab.byteLength !== bb.byteLength) return false;
+                    const av = new Uint8Array(ab);
+                    const bv = new Uint8Array(bb);
+                    for (let i = 0; i < av.length; i++) {
+                        if (av[i] !== bv[i]) return false;
+                    }
+                    return true;
+                },
+
+                readFile(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = e => resolve(e.target.result);
+                        reader.onerror = reject;
+                        reader.readAsText(file);
+                    });
+                },
+
+                // Folder result helpers
+                filteredFolderFiles() {
+                    if (!this.folderResult?.file_results) return [];
+                    if (this.folderFilter === 'all') return this.folderResult.file_results;
+                    return this.folderResult.file_results.filter(f => f.status === this.folderFilter);
+                },
+
+                toggleFileDetail(fileName) {
+                    this.expandedFile = this.expandedFile === fileName ? null : fileName;
+                },
+
+                // Per-file feedback helpers
+                setFileFeedback(fileName, classification) {
+                    if (!this.fileFeedbacks[fileName]) {
+                        this.fileFeedbacks[fileName] = { classification: '', notes: '' };
+                    }
+                    this.fileFeedbacks[fileName].classification = classification;
+                },
+
+                getFileFeedback(fileName) {
+                    return this.fileFeedbacks[fileName]?.classification || '';
+                },
+
+                setFileFeedbackNotes(fileName, notes) {
+                    if (!this.fileFeedbacks[fileName]) {
+                        this.fileFeedbacks[fileName] = { classification: '', notes: '' };
+                    }
+                    this.fileFeedbacks[fileName].notes = notes;
+                },
+
+                async submitFileFeedback(fileName) {
+                    const fb = this.fileFeedbacks[fileName];
+                    if (!fb?.classification || !this.folderFeedbackReviewer || !this.folderResult) return;
+
+                    try {
+                        const res = await fetch(`/api/folder-compare/${this.folderResult.folder_analysis_id}/feedback`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                folder_analysis_id: this.folderResult.folder_analysis_id,
+                                file_name: fileName,
+                                classification: fb.classification,
+                                notes: fb.notes || '',
+                                reviewer: this.folderFeedbackReviewer
+                            })
+                        });
+
+                        if (!res.ok) {
+                            let detail = `HTTP ${res.status}`;
+                            try { const j = await res.json(); detail = j.detail || detail; } catch (_) { }
+                            throw new Error(detail);
+                        }
+
+                        this.showToast(`Feedback for ${fileName} submitted!`, 'success');
+                        this.fileFeedbacks[fileName] = { classification: '', notes: '' };
+                        this.loadFeedbackStats();
+                    } catch (e) {
+                        this.showToast('Failed to submit feedback: ' + e.message, 'error');
+                    }
+                },
+
+                // Folder HTML report download
+                downloadFolderReport() {
+                    if (!this.folderResult) return;
+                    window.open(`/api/folder-compare/${this.folderResult.folder_analysis_id}/report`, '_blank');
+                },
+
+                // Single-file Feedback
+                async submitFeedback() {
+                    if (!this.analysisResult || !this.feedbackClassification || !this.feedbackReviewer) return;
+
+                    try {
+                        const res = await fetch('/api/feedback', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                analysis_id: this.analysisResult.analysis_id,
+                                classification: this.feedbackClassification,
+                                notes: this.feedbackNotes,
+                                reviewer: this.feedbackReviewer
+                            })
+                        });
+
+                        if (!res.ok) {
+                            let detail = `HTTP ${res.status}`;
+                            try { const j = await res.json(); detail = j.detail || detail; } catch (_) { }
+                            throw new Error(detail);
+                        }
+
+                        this.showToast('Feedback submitted! Thank you for improving the AI.', 'success');
+                        this.feedbackClassification = '';
+                        this.feedbackNotes = '';
+                        this.loadFeedbackStats();
+
+                    } catch (e) {
+                        this.showToast('Failed to submit feedback: ' + e.message, 'error');
+                    }
+                },
+
+                async downloadReport(format) {
+                    if (!this.analysisResult) return;
+                    window.open(`/api/reports/${this.analysisResult.analysis_id}?format=${format}`, '_blank');
+                },
+
+                async viewAnalysis(analysisId) {
+                    try {
+                        const res = await fetch(`/api/compare/${analysisId}`);
+                        if (res.ok) {
+                            window.open(`/api/reports/${analysisId}?format=html`, '_blank');
+                        }
+                    } catch (e) {
+                        this.showToast('Failed to load analysis', 'error');
+                    }
+                },
+
+                showToast(message, type = 'info') {
+                    const id = Date.now();
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 3000);
+                }
+            };
+        }
+    </script>
+</body>
+
+</html>

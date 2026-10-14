@@ -1,0 +1,39 @@
+[Unit]
+Description=NC Code Analyser (FastAPI + Uvicorn)
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ncanalyser
+Group=ncanalyser
+WorkingDirectory=/opt/nc-code-analyser
+EnvironmentFile=-/opt/nc-code-analyser/.env
+
+# Single async worker is intentional: file_registry / analysis_registry are
+# in-process dicts. FastAPI's async loop handles many concurrent QA users
+# concurrently for this I/O-bound workload. Tune --limit-concurrency if needed.
+ExecStart=/opt/nc-code-analyser/.venv/bin/uvicorn src.main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 1 \
+    --proxy-headers \
+    --forwarded-allow-ips=* \
+    --timeout-keep-alive 30 \
+    --limit-concurrency 200 \
+    --log-level info
+
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/nc-code-analyser
+
+[Install]
+WantedBy=multi-user.target
